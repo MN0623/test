@@ -130,7 +130,7 @@ def topic_list():
     topics = get_topics()
 
     st.subheader(
-        f"📋 みんなのお題（{len(topics)}件）"
+        f"みんなのリクエスト（{len(topics)}件）"
     )
 
     if not topics:
@@ -146,7 +146,7 @@ def topic_list():
 
             # お題
             st.markdown(
-                f"### 📮 お題 #{topic['id']}"
+                f"### お題 #{topic['id']}"
             )
 
             st.write(topic["text"])
@@ -189,7 +189,7 @@ st.caption(
 # 投稿フォーム
 # ==========================================
 
-st.subheader("✏️ お題を投稿")
+st.subheader("お題を投稿")
 
 with st.form(
     "topic_form",
@@ -198,13 +198,13 @@ with st.form(
 
     topic = st.text_area(
         "お題",
-        placeholder="例：最近ハマっているゲームを教えて！",
+        placeholder="例：描いてほしいキャラやシチュエーションなど",
         max_chars=500,
         height=120,
     )
 
     submit = st.form_submit_button(
-        "📮 投稿する",
+        "投稿する",
         use_container_width=True,
     )
 
@@ -243,12 +243,3 @@ st.divider()
 topic_list()
 
 
-# ==========================================
-# フッター
-# ==========================================
-
-st.divider()
-
-st.caption(
-    "📮 みんなのお題箱"
-)
