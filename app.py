@@ -1,11 +1,22 @@
-import streamlit as st
+```python
+import sqlite3
 from datetime import datetime
+
+import streamlit as st
+
 from const import HIDE_ST_STYLE
 
 
-# =========================
+# ==========================================
+# 設定
+# ==========================================
+
+DB_FILE = "topics.db"
+
+
+# ==========================================
 # ページ設定
-# =========================
+# ==========================================
 
 st.set_page_config(
     page_title="お題箱",
@@ -17,160 +28,230 @@ st.set_page_config(
 st.markdown(HIDE_ST_STYLE, unsafe_allow_html=True)
 
 
-# =========================
-# データ管理
-# =========================
+# ==========================================
+# データベース
+# ==========================================
 
-if "topics" not in st.session_state:
-    st.session_state.topics = []
+def get_connection():
+    """SQLiteに接続する"""
+    conn = sqlite3.connect(
+        DB_FILE,
+        timeout=10,
+    )
+
+    conn.row_factory = sqlite3.Row
+
+    # 複数アクセス時の安定性を上げる
+    conn.execute("PRAGMA journal_mode=WAL")
+
+    return conn
 
 
-# =========================
-# CSS
-# =========================
+def init_db():
+    """テーブルを作成する"""
+    conn = get_connection()
 
-st.markdown(
-    """
-    <style>
-    .title {
-        text-align: center;
-        font-size: 2.5rem;
-        font-weight: 700;
-        margin-bottom: 0.2rem;
-    }
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS topics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
 
-    .subtitle {
-        text-align: center;
-        color: #777;
-        margin-bottom: 2rem;
-    }
+    conn.commit()
+    conn.close()
 
-    .topic-card {
-        padding: 1.2rem;
-        border: 1px solid #e5e5e5;
-        border-radius: 12px;
-        margin-bottom: 1rem;
-        background-color: #ffffff;
-    }
 
-    .topic-number {
-        color: #888;
-        font-size: 0.8rem;
-        margin-bottom: 0.4rem;
-    }
+def get_topics():
+    """お題を取得する"""
+    conn = get_connection()
 
-    .topic-text {
-        font-size: 1.1rem;
-        line-height: 1.6;
-    }
+    topics = conn.execute(
+        """
+        SELECT id, text, created_at
+        FROM topics
+        ORDER BY id DESC
+        """
+    ).fetchall()
 
-    .topic-date {
-        color: #999;
-        font-size: 0.75rem;
-        margin-top: 0.7rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
+    conn.close()
+
+    return topics
+
+
+def add_topic(text):
+    """お題を追加する"""
+    conn = get_connection()
+
+    conn.execute(
+        """
+        INSERT INTO topics (text, created_at)
+        VALUES (?, ?)
+        """,
+        (
+            text,
+            datetime.now().strftime("%Y/%m/%d %H:%M"),
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def delete_topic(topic_id):
+    """お題を削除する"""
+    conn = get_connection()
+
+    conn.execute(
+        """
+        DELETE FROM topics
+        WHERE id = ?
+        """,
+        (topic_id,),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+# アプリ起動時にDBを初期化
+init_db()
+
+
+# ==========================================
+# お題一覧を表示する部分
+# ==========================================
+
+@st.fragment(run_every="3s")
+def topic_list():
+
+    topics = get_topics()
+
+    st.subheader(
+        f"📋 みんなのお題（{len(topics)}件）"
+    )
+
+    if not topics:
+        st.info(
+            "まだお題がありません。\n\n"
+            "最初のお題を投稿してみよう！"
+        )
+        return
+
+    for topic in topics:
+
+        with st.container(border=True):
+
+            # お題
+            st.markdown(
+                f"### 📮 お題 #{topic['id']}"
+            )
+
+            st.write(topic["text"])
+
+            # 投稿日時
+            st.caption(
+                f"投稿日時：{topic['created_at']}"
+            )
+
+            # 削除ボタン
+            if st.button(
+                "🗑️ このお題を削除",
+                key=f"delete_{topic['id']}",
+                use_container_width=True,
+            ):
+                delete_topic(topic["id"])
+
+                st.toast("お題を削除しました")
+
+                # 一覧を即時更新
+                st.rerun(scope="fragment")
+
+
+# ==========================================
+# タイトル
+# ==========================================
+
+st.title("📮 お題箱")
+
+st.write(
+    "みんなでお題を投稿しよう！"
+)
+
+st.caption(
+    "投稿されたお題はみんなで見ることができます。"
 )
 
 
-# =========================
-# ヘッダー
-# =========================
+# ==========================================
+# 投稿フォーム
+# ==========================================
 
-st.markdown(
-    '<div class="title">お題箱</div>',
-    unsafe_allow_html=True,
-)
+st.subheader("✏️ お題を投稿")
 
-st.markdown(
-    '<div class="subtitle">みんなでお題を投稿して、みんなで見よう！</div>',
-    unsafe_allow_html=True,
-)
+with st.form(
+    "topic_form",
+    clear_on_submit=True,
+):
 
-
-# =========================
-# お題投稿
-# =========================
-
-with st.form("topic_form", clear_on_submit=True):
     topic = st.text_area(
-        "お題を入力",
-        placeholder="例：最近ハマっていることを教えて！",
+        "お題",
+        placeholder="例：最近ハマっているゲームを教えて！",
+        max_chars=500,
         height=120,
     )
 
-    submitted = st.form_submit_button(
-        "お題を投稿する",
+    submit = st.form_submit_button(
+        "📮 投稿する",
         use_container_width=True,
     )
 
-    if submitted:
-        topic = topic.strip()
 
-        if not topic:
-            st.warning("お題を入力してください。")
-        elif len(topic) > 500:
-            st.warning("お題は500文字以内で入力してください。")
-        else:
-            st.session_state.topics.insert(
-                0,
-                {
-                    "text": topic,
-                    "created_at": datetime.now().strftime(
-                        "%Y/%m/%d %H:%M"
-                    ),
-                },
-            )
+# ==========================================
+# 投稿処理
+# ==========================================
 
-            st.success("お題を投稿しました！")
+if submit:
 
+    topic = topic.strip()
 
-st.divider()
+    if not topic:
 
-
-# =========================
-# 投稿されたお題
-# =========================
-
-st.subheader(
-    f"📋 投稿されたお題（{len(st.session_state.topics)}件）"
-)
-
-
-if not st.session_state.topics:
-    st.info(
-        "まだお題がありません。\n\n"
-        "最初のお題を投稿してみよう！"
-    )
-
-else:
-    for i, item in enumerate(st.session_state.topics, start=1):
-        st.markdown(
-            f"""
-            <div class="topic-card">
-                <div class="topic-number">
-                    お題 #{len(st.session_state.topics) - i + 1}
-                </div>
-
-                <div class="topic-text">
-                    {item["text"]}
-                </div>
-
-                <div class="topic-date">
-                    投稿日時：{item["created_at"]}
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        st.error(
+            "お題を入力してください。"
         )
 
+    else:
 
-# =========================
-# フッター
-# =========================
+        add_topic(topic)
+
+        st.success(
+            "お題を投稿しました！"
+        )
+
+        st.rerun()
+
+
+# ==========================================
+# お題一覧
+# ==========================================
 
 st.divider()
 
-st.caption("📮 みんなのお題箱")
+topic_list()
+
+
+# ==========================================
+# フッター
+# ==========================================
+
+st.divider()
+
+st.caption(
+    "📮 みんなのお題箱"
+)
+```
+
