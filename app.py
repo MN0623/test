@@ -181,7 +181,12 @@ else:
             key="origami-cam",
             mode=WebRtcMode.SENDRECV,
             video_processor_factory=OrigamiProcessor,
-            media_stream_constraints={"video": True, "audio": False},
+            media_stream_constraints={
+                "video": {
+                    "width": {"ideal": 1280},
+                    "height": {"ideal": 720},
+                    "aspectRatio": {"ideal": 16 / 9},
+                },
             async_processing=True,
         )
 
