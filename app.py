@@ -1,158 +1,93 @@
+import streamlit as st
 import cv2
 import numpy as np
 
-def main():
-    # カメラの初期化（0番で開かない場合は 1 や 2 に変更）
-    cap = cv2.VideoCapture(0)
-    
-    if not cap.isOpened():
-        print("エラー: Webカメラを開くことができませんでした。")
-        return
+# tu.py と demo.py を無変更でインポート
+from tu import STEPS, OrigamiTutor
+import demo
 
-    # ウインドウの作成と設定（リサイズ可能にする）
-    cv2.namedWindow("Origami Step Assister", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("Origami Step Assister", 960, 720)
+# Streamlit ページ設定
+st.set_page_config(page_title="折り紙チューター：ハート", layout="wide")
 
-    current_step = 1
-    true_count = 0
-    REQUIRED_TRUE_FRAMES = 30  # 判定安定化のために100から30に緩和
+# ---------------------------------------------------------
+# セッション状態の初期化 (tu.pyのOrigamiTutorを保持)
+# ---------------------------------------------------------
+if "tutor" not in st.session_state:
+    st.session_state.tutor = OrigamiTutor(STEPS)
 
-    print("プログラムを開始します。'q'キーで終了、'n'キーで手動ステップ進行。")
+tutor = st.session_state.tutor
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("エラー: フレームを取得できませんでした。")
-            break
+# ---------------------------------------------------------
+# ヘッダー表示
+# ---------------------------------------------------------
+st.title("折り紙チューター：ハートの折り方")
 
-        # 描画用の複製を作成
-        display = frame.copy()
-        
-        # 色空間変換
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+# 完了時の表示
+if tutor.is_finished():
+    st.balloons()
+    st.success("🎉 おめでとうございます！ハートの折り紙が完成しました！")
+    if st.button("最初からやり直す"):
+        st.session_state.tutor = OrigamiTutor(STEPS)
+        st.rerun()
 
-        # ----------------------------------------------------
-        # 共通処理: 色マスクの作成 (青・黄)
-        # ----------------------------------------------------
-        lower_blue = np.array([90, 50, 50])
-        upper_blue = np.array([130, 255, 255])
-        mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
+else:
+    current_step_data = tutor.get_current_step()
+    step_num = tutor.get_current_step_number()
+    instruction = current_step_data["instruction"]
+    total_steps = len(STEPS)
 
-        lower_yellow = np.array([15, 80, 80])
-        upper_yellow = np.array([35, 255, 255])
-        mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
+    st.subheader(f"Step {step_num} / {total_steps}")
+    st.info(f"**指示:** {instruction}")
 
-        # 状態フラグ
-        step_passed = False
-        status_text = ""
+    col1, col2 = st.columns([1, 1])
 
-        # ----------------------------------------------------
-        # STEP 1
-        # ----------------------------------------------------
-        if current_step == 1:
-            has_blue_triangle = False
-            is_pentagon = False
+    # ---------------------------------------------------------
+    # 左カラム: カメラ入力とCV判定
+    # ---------------------------------------------------------
+    with col1:
+        st.write("### リアルタイム判定")
+        img_file = st.camera_input("現在の折った状態を撮影してください")
 
-            contours_blue, _ = cv2.findContours(mask_blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if contours_blue:
-                largest = max(contours_blue, key=cv2.contourArea)
-                if cv2.contourArea(largest) > 1000:
-                    peri = cv2.arcLength(largest, True)
-                    approx = cv2.approxPolyDP(largest, 0.04 * peri, True)
-                    if len(approx) == 3:
-                        has_blue_triangle = True
-                        cv2.drawContours(display, [approx], -1, (255, 0, 0), 3)
+        if img_file is not None:
+            # カメラ画像を OpenCV 形式 (BGR) に変換
+            file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
+            frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
-            # 外形判定 (ガウシアンフィルタ + Otsu二値化)
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-            _, thresh = cv2.threshold(blurred, 60, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-            
-            contours_outer, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for cnt in contours_outer:
-                if cv2.contourArea(cnt) > 8000:
-                    peri = cv2.arcLength(cnt, True)
-                    approx = cv2.approxPolyDP(cnt, 0.03 * peri, True)
-                    if 4 <= len(approx) <= 6:  # 4~6頂点を許容
-                        is_pentagon = True
-                        cv2.drawContours(display, [approx], -1, (0, 255, 0), 2)
-                        break
+            # -------------------------------------------------
+            # demo.py の判定ロジック呼び出し
+            # ※ demo.py の実際の判定関数に合わせて書き換えてください
+            # 例: check_origami(frame, step_num) / check_step(frame, step_num) など
+            # -------------------------------------------------
+            try:
+                # 画面から取得した画像(frame)とステップ番号(step_num)をdemo.pyに送る
+                is_correct = demo.check_origami(frame, step_num)
+            except AttributeError:
+                # demo.py 内の関数名が不一致の場合の仮処理
+                st.warning("`demo.py` 内の判定関数名を確認してください。")
+                is_correct = False
 
-            step_passed = has_blue_triangle and is_pentagon
-            status_text = f"Blue Tri: {has_blue_triangle} | Pentagon: {is_pentagon}"
+            # 判定結果を表示
+            if is_correct:
+                st.success("⭕ 正しく折れています！")
+                if st.button("次のステップへ進む"):
+                    tutor.receive_cv_result(True)
+                    st.rerun()
+            else:
+                st.error("❌ まだ正しく折れていないようです。もう一度確認してください。")
 
-        # ----------------------------------------------------
-        # STEP 2
-        # ----------------------------------------------------
-        elif current_step == 2:
-            has_hexagon = False
-            contours_blue, _ = cv2.findContours(mask_blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if contours_blue:
-                largest = max(contours_blue, key=cv2.contourArea)
-                if cv2.contourArea(largest) > 1000:
-                    peri = cv2.arcLength(largest, True)
-                    approx = cv2.approxPolyDP(largest, 0.03 * peri, True)
-                    if 5 <= len(approx) <= 7:
-                        has_hexagon = True
-                        cv2.drawContours(display, [approx], -1, (255, 0, 0), 3)
+    # ---------------------------------------------------------
+    # 右カラム: 手動コントロール (テスト・スキップ用)
+    # ---------------------------------------------------------
+    with col2:
+        st.write("### 手動コントロール")
+        st.write(f"現在のステップインデックス: {tutor.current_step}")
 
-            step_passed = has_hexagon
-            status_text = f"Hexagon: {has_hexagon}"
+        if st.button("強制的に次のステップへ"):
+            tutor.next_step()
+            st.rerun()
 
-        # ----------------------------------------------------
-        # STEP 3 ~ STEP 4 (必要に応じて追加)
-        # ----------------------------------------------------
-        else:
-            status_text = f"Step {current_step} in progress..."
-
-        # ----------------------------------------------------
-        # カウンタの更新とステップ進行
-        # ----------------------------------------------------
-        if step_passed:
-            true_count += 1
-        else:
-            true_count = max(0, true_count - 1)  # 一瞬のブレで即0リセットしないための処理
-
-        if true_count >= REQUIRED_TRUE_FRAMES:
-            current_step += 1
-            true_count = 0
-            print(f"STEP CLEAR! Advanced to Step {current_step}")
-
-        # ----------------------------------------------------
-        # UI描画 (画面上のテキストオーバーレイ)
-        # ----------------------------------------------------
-        # 上部ステータスバー背景
-        cv2.rectangle(display, (0, 0), (640, 80), (30, 30, 30), -1)
-        
-        # ステータス文字描画
-        cv2.putText(display, f"STEP: {current_step}", (20, 30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-        
-        cv2.putText(display, status_text, (20, 60), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-
-        # 進行度プログレスバー
-        progress_width = int((true_count / REQUIRED_TRUE_FRAMES) * 200)
-        cv2.rectangle(display, (400, 20), (600, 40), (100, 100, 100), 2)
-        if progress_width > 0:
-            cv2.rectangle(display, (400, 20), (400 + progress_width, 40), (0, 255, 0), -1)
-
-        # ----------------------------------------------------
-        # 画面表示 & キー入力処理（最重要）
-        # ----------------------------------------------------
-        cv2.imshow("Origami Step Assister", display)
-
-        # キーの受付（1ms待機）
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q'):
-            break
-        elif key == ord('n'):  # デバッグ用：'n'キーで強制次ステップへ
-            current_step += 1
-            true_count = 0
-            print(f"Forced skip to Step {current_step}")
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-if __name__ == "__main__":
-    main()
+        if st.button("前のステップに戻る"):
+            if tutor.current_step > 0:
+                tutor.current_step -= 1
+                tutor.finished = False
+                st.rerun()
