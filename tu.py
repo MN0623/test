@@ -1,5 +1,5 @@
 import time
-from check_origami import check_origami
+#from check_origami import check_origami
 
 
 # =========================================================
