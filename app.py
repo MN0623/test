@@ -204,7 +204,7 @@ else:
     # ---------------------------------------------------------
     with col2:
         st.write("### 手動コントロール")
-        st.write(f"現在のステップインデックス: {tutor.current_step}")
+#        st.write(f"現在のステップイン: {tutor.current_step}")
 
         if st.button("強制的に次のステップへ"):
             tutor.next_step()
