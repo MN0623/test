@@ -46,7 +46,6 @@ else:
     # 左カラム: カメラ入力 (WebRTC) と CV判定
     # ---------------------------------------------------------
     with col1:
-        st.write("### リアルタイム判定")
 
         # 映像フレームを1コマずつ処理するクラス
         class OrigamiProcessor(VideoTransformerBase):
@@ -75,7 +74,12 @@ else:
             key=f"origami-step-{step_num}",  # ステップ切り替え時にリセットするためキーにステップ番号を含める
             mode=WebRtcMode.SENDRECV,
             video_processor_factory=OrigamiProcessor,
-            media_stream_constraints={"video": True, "audio": False},
+            media_stream_constraints={
+            "video": {
+                "width": {"ideal": 1280},
+                "height": {"ideal": 720},
+                "aspectRatio": {"ideal": 16 / 9},
+            },
             async_processing=True,
         )
 
