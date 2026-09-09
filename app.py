@@ -178,17 +178,19 @@ else:
 
         # key を固定値にすることで、st.rerun() されても WebRTC セッションを維持する
         ctx = webrtc_streamer(
-            key="origami-cam",
-            mode=WebRtcMode.SENDRECV,
-            video_processor_factory=OrigamiProcessor,
-            media_stream_constraints={
-                "video": {
-                    "width": {"ideal": 1280},
-                    "height": {"ideal": 720},
-                    "aspectRatio": {"ideal": 16 / 9},
-                },
-            async_processing=True,
-        )
+                    key="origami-cam",
+                    mode=WebRtcMode.SENDRECV,
+                    video_processor_factory=OrigamiProcessor,
+                    media_stream_constraints={
+                        "video": {
+                            "width": {"ideal": 1280},
+                            "height": {"ideal": 720},
+                            "aspectRatio": {"ideal": 16 / 9},
+                        },
+                        "audio": False,
+                    },  # <-- 中括弧 } で辞書を閉じました
+                    async_processing=True,
+                )
 
         # 起動中のプロセッサへ「現在のステップ番号」を渡す
         if ctx.video_processor:
