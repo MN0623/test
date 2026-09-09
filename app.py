@@ -195,7 +195,7 @@ else:
             ctx.video_processor.step_num = step_num
 
         st.write("---")
-        if st.button("正しく折れたらここをクリックして次へ"):
+        if st.button("強制的に完成"):
             tutor.receive_cv_result(True)
             st.rerun()
 
