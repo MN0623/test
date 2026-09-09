@@ -1,245 +1,100 @@
-import sqlite3
-from datetime import datetime
-
 import streamlit as st
-
-from const import HIDE_ST_STYLE
-
-
-# ==========================================
-# 設定
-# ==========================================
-
-DB_FILE = "topics.db"
-
-
-# ==========================================
-# ページ設定
-# ==========================================
-
-st.set_page_config(
-    page_title="お題箱",
-    page_icon="📮",
-    layout="centered",
-)
-
-# const.py のCSSを反映
-st.markdown(HIDE_ST_STYLE, unsafe_allow_html=True)
-
-
-# ==========================================
-# データベース
-# ==========================================
-
-def get_connection():
-    """SQLiteに接続する"""
-    conn = sqlite3.connect(
-        DB_FILE,
-        timeout=10,
-    )
-
-    conn.row_factory = sqlite3.Row
-
-    # 複数アクセス時の安定性を上げる
-    conn.execute("PRAGMA journal_mode=WAL")
-
-    return conn
-
-
-def init_db():
-    """テーブルを作成する"""
-    conn = get_connection()
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS topics (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            text TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-
-    conn.commit()
-    conn.close()
-
-
-def get_topics():
-    """お題を取得する"""
-    conn = get_connection()
-
-    topics = conn.execute(
-        """
-        SELECT id, text, created_at
-        FROM topics
-        ORDER BY id DESC
-        """
-    ).fetchall()
-
-    conn.close()
-
-    return topics
-
-
-def add_topic(text):
-    """お題を追加する"""
-    conn = get_connection()
-
-    conn.execute(
-        """
-        INSERT INTO topics (text, created_at)
-        VALUES (?, ?)
-        """,
-        (
-            text,
-            datetime.now().strftime("%Y/%m/%d %H:%M"),
-        ),
-    )
-
-    conn.commit()
-    conn.close()
-
-
-def delete_topic(topic_id):
-    """お題を削除する"""
-    conn = get_connection()
-
-    conn.execute(
-        """
-        DELETE FROM topics
-        WHERE id = ?
-        """,
-        (topic_id,),
-    )
-
-    conn.commit()
-    conn.close()
-
-
-# アプリ起動時にDBを初期化
-init_db()
-
-
-# ==========================================
-# お題一覧を表示する部分
-# ==========================================
-
-@st.fragment(run_every="3s")
-def topic_list():
-
-    topics = get_topics()
-
-    st.subheader(
-        f"みんなのリクエスト（{len(topics)}件）"
-    )
-
-    if not topics:
-        st.info(
-            "まだお題がありません。\n\n"
-            "最初のお題を投稿してみよう！"
-        )
-        return
-
-    for topic in topics:
-
-        with st.container(border=True):
-
-            # お題
-            st.markdown(
-                f"### お題 #{topic['id']}"
-            )
-
-            st.write(topic["text"])
-
-            # 投稿日時
-            st.caption(
-                f"投稿日時：{topic['created_at']}"
-            )
-
-            # 削除ボタン
-            if st.button(
-                "🗑️ このお題を削除",
-                key=f"delete_{topic['id']}",
-                use_container_width=True,
-            ):
-                delete_topic(topic["id"])
-
-                st.toast("お題を削除しました")
-
-                # 一覧を即時更新
-                st.rerun(scope="fragment")
-
-
-# ==========================================
-# タイトル
-# ==========================================
-
-st.title("📮 お題箱")
-
-st.write(
-    "みんなでお題を投稿しよう！"
-)
-
-st.caption(
-    "投稿されたお題はみんなで見ることができます。"
-)
-
-
-# ==========================================
-# 投稿フォーム
-# ==========================================
-
-st.subheader("お題を投稿")
-
-with st.form(
-    "topic_form",
-    clear_on_submit=True,
-):
-
-    topic = st.text_area(
-        "お題",
-        placeholder="例：描いてほしいキャラやシチュエーションなど",
-        max_chars=500,
-        height=120,
-    )
-
-    submit = st.form_submit_button(
-        "投稿する",
-        use_container_width=True,
-    )
-
-
-# ==========================================
-# 投稿処理
-# ==========================================
-
-if submit:
-
-    topic = topic.strip()
-
-    if not topic:
-
-        st.error(
-            "お題を入力してください。"
-        )
-
-    else:
-
-        add_topic(topic)
-
-        st.success(
-            "お題を投稿しました！"
-        )
-
+import cv2
+import numpy as np
+
+# 1. 既存ファイルをそのままインポート
+from tu import STEPS
+import demo
+
+# Streamlit の基本ページ設定
+st.set_page_config(page_title="折り紙チューター：ハート", layout="wide")
+
+# ---------------------------------------------------------
+# セッション状態の初期化
+# ---------------------------------------------------------
+if "step_index" not in st.session_state:
+    st.session_state.step_index = 0  # 0からスタート
+if "is_finished" not in st.session_state:
+    st.session_state.is_finished = False
+
+# ---------------------------------------------------------
+# サイドバー／ヘッダー表示
+# ---------------------------------------------------------
+st.title("折り紙チューター：ハートの折り方")
+
+# 全ステップ数
+total_steps = len(STEPS)
+
+if st.session_state.is_finished:
+    st.balloons()
+    st.success("🎉 おめでとうございます！ハートの折り紙が完成しました！")
+    if st.button("最初からやり直す"):
+        st.session_state.step_index = 0
+        st.session_state.is_finished = False
         st.rerun()
+else:
+    current_step_data = STEPS[st.session_state.step_index]
+    step_num = current_step_data["step"]
+    instruction = current_step_data["instruction"]
 
+    st.subheader(f"Step {step_num} / {total_steps}")
+    st.info(f"**指示:** {instruction}")
 
-# ==========================================
-# お題一覧
-# ==========================================
+    col1, col2 = st.columns([1, 1])
 
-st.divider()
+    # ---------------------------------------------------------
+    # 左カラム: カメラ入力と判定処理
+    # ---------------------------------------------------------
+    with col1:
+        st.write("### リアルタイム判定")
+        img_file = st.camera_input("現在の折った状態を撮影してください")
 
-topic_list()
+        if img_file is not None:
+            # OpenCV 形式 (BGR) に変換
+            file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
+            frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
+            # -------------------------------------------------
+            # demo.py の判定処理を呼び出し
+            # ※ demo.py 内の関数名・仕様に合わせて調整してください
+            # 例: check_origami(frame, step_num) や main 処理等
+            # -------------------------------------------------
+            try:
+                # demo.py の判定関数を実行 (例: check_step(frame, step_num))
+                is_correct = demo.check_origami(frame, step_num)
+            except AttributeError:
+                # 関数名が異なる場合のフォールバック（画面上での手動スキップ等）
+                st.warning("`demo.py` 内の判定関数の呼び出し名を確認してください。")
+                is_correct = False
 
+            # 判定結果に応じた表示とステップ更新
+            if is_correct:
+                st.success("⭕ 正しく折れています！")
+                if st.button("次のステップへ進む"):
+                    if st.session_state.step_index + 1 < total_steps:
+                        st.session_state.step_index += 1
+                    else:
+                        st.session_state.is_finished = True
+                    st.rerun()
+            else:
+                st.error("❌ まだ正しく折れていないようです。もう一度確認してください。")
+
+    # ---------------------------------------------------------
+    # 右カラム: 手動コントロール（テスト・デバッグ用）
+    # ---------------------------------------------------------
+    with col2:
+        st.write("### 進捗コントロール")
+        st.write(f"現在の内部インデックス: {st.session_state.step_index}")
+
+        if st.button("強制的に次のステップへ"):
+            if st.session_state.step_index + 1 < total_steps:
+                st.session_state.step_index += 1
+            else:
+                st.session_state.is_finished = True
+            st.rerun()
+
+        if st.button("前のステップに戻る"):
+            if st.session_state.step_index > 0:
+                st.session_state.step_index -= 1
+                st.session_state.is_finished = False
+            st.rerun()
