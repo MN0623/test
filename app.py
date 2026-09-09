@@ -1,93 +1,103 @@
+import av
 import streamlit as st
-import cv2
-import numpy as np
+from streamlit_webrtc import VideoProcessorBase, webrtc_streamer
 
-# tu.py と demo.py を無変更でインポート
-from tu import STEPS, OrigamiTutor
-import demo
+from checker import OrigamiChecker
+from tu import STEPS
 
-# Streamlit ページ設定
-st.set_page_config(page_title="折り紙チューター：ハート", layout="wide")
+st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 
-# ---------------------------------------------------------
-# セッション状態の初期化 (tu.pyのOrigamiTutorを保持)
-# ---------------------------------------------------------
-if "tutor" not in st.session_state:
-    st.session_state.tutor = OrigamiTutor(STEPS)
+if "step" not in st.session_state:
+    st.session_state.step = 1
 
-tutor = st.session_state.tutor
 
-# ---------------------------------------------------------
-# ヘッダー表示
-# ---------------------------------------------------------
-st.title("折り紙チューター：ハートの折り方")
+# =========================================
+# VideoProcessor クラス
+# =========================================
+class VideoProcessor(VideoProcessorBase):
 
-# 完了時の表示
-if tutor.is_finished():
-    st.balloons()
-    st.success("🎉 おめでとうございます！ハートの折り紙が完成しました！")
-    if st.button("最初からやり直す"):
-        st.session_state.tutor = OrigamiTutor(STEPS)
-        st.rerun()
+    def __init__(self):
+        self.result = False
+        self.current_step = 1
+        self.checker = OrigamiChecker()
 
-else:
-    current_step_data = tutor.get_current_step()
-    step_num = tutor.get_current_step_number()
-    instruction = current_step_data["instruction"]
-    total_steps = len(STEPS)
+    def update_step(self, step):
+        if self.current_step != step:
+            self.current_step = step
+            self.checker.true_count = 0  # ステップが変わったらカウントをリセット
 
-    st.subheader(f"Step {step_num} / {total_steps}")
-    st.info(f"**指示:** {instruction}")
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        img = cv2.flip(img, 1)  # 鏡像反転
 
-    col1, col2 = st.columns([1, 1])
+        # 折り紙判定ロジックを呼び出し
+        self.result, processed_img = self.checker.process_frame(
+            img, self.current_step
+        )
 
-    # ---------------------------------------------------------
-    # 左カラム: カメラ入力とCV判定
-    # ---------------------------------------------------------
-    with col1:
-        st.write("### リアルタイム判定")
-        img_file = st.camera_input("現在の折った状態を撮影してください")
+        return av.VideoFrame.from_ndarray(processed_img, format="bgr24")
 
-        if img_file is not None:
-            # カメラ画像を OpenCV 形式 (BGR) に変換
-            file_bytes = np.asarray(bytearray(img_file.read()), dtype=np.uint8)
-            frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
-            # -------------------------------------------------
-            # demo.py の判定ロジック呼び出し
-            # ※ demo.py の実際の判定関数に合わせて書き換えてください
-            # 例: check_origami(frame, step_num) / check_step(frame, step_num) など
-            # -------------------------------------------------
-            try:
-                # 画面から取得した画像(frame)とステップ番号(step_num)をdemo.pyに送る
-                is_correct = demo.check_origami(frame, step_num)
-            except AttributeError:
-                # demo.py 内の関数名が不一致の場合の仮処理
-                st.warning("`demo.py` 内の判定関数名を確認してください。")
-                is_correct = False
+# =========================================
+# UI レイアウト
+# =========================================
+cols = st.columns([2, 1], gap="medium")
 
-            # 判定結果を表示
-            if is_correct:
-                st.success("⭕ 正しく折れています！")
-                if st.button("次のステップへ進む"):
-                    tutor.receive_cv_result(True)
-                    st.rerun()
-            else:
-                st.error("❌ まだ正しく折れていないようです。もう一度確認してください。")
+# --- カメラエリア ---
+with cols[0]:
+    st.subheader("Camera")
+    ctx = webrtc_streamer(
+        key="origami-camera",
+        video_processor_factory=VideoProcessor,
+        media_stream_constraints={
+            "video": {
+                "width": {"ideal": 1280},
+                "height": {"ideal": 720},
+                "aspectRatio": {"ideal": 16 / 9},
+            },
+            "audio": False,
+        },
+        rtc_configuration={
+            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+        },
+    )
 
-    # ---------------------------------------------------------
-    # 右カラム: 手動コントロール (テスト・スキップ用)
-    # ---------------------------------------------------------
-    with col2:
-        st.write("### 手動コントロール")
-        st.write(f"現在のステップインデックス: {tutor.current_step}")
+    # 現在のセッションの Step を Processor 側に常に更新・同期
+    if ctx.video_processor:
+        ctx.video_processor.update_step(st.session_state.step)
 
-        if st.button("強制的に次のステップへ"):
-            tutor.next_step()
-            st.rerun()
-
-        if st.button("前のステップに戻る"):
-            if tutor.current_step > 0:
-                tutor.current_step -= 1
-                tutor.finished = False
+        # クリア判定時の画面更新
+        if ctx.video_processor.result:
+            if st.session_state.step <= len(STEPS):
+                st.session_state.step += 1
+                ctx.video_processor.result = False  # 連打防止のため即時リセット
                 st.rerun()
+
+# --- 手順表示エリア ---
+with cols[1]:
+    st.subheader("Step Guide")
+    current_idx = st.session_state.step - 1
+
+    if current_idx < len(STEPS):
+        step_info = STEPS[current_idx]
+        st.markdown(f"""
+        ### Step {step_info['step']} / {len(STEPS)}
+        
+        **{step_info['instruction']}**
+        
+        ---
+        💡 *カメラに向かって折り紙をかざしてください。連続して検出されると自動で次のステップへ進みます。*
+        """)
+    else:
+        st.markdown("""
+        ### 🎉 Complete!
+        
+        すべての手順が完了しました！
+        """)
+
+st.divider()
+
+if st.session_state.step > len(STEPS):
+    st.success("Your origami heart is complete! 🎉")
+else:
+    st.info(f"現在 Step {st.session_state.step} を実行中です。")
