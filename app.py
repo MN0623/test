@@ -194,10 +194,10 @@ else:
         if ctx.video_processor:
             ctx.video_processor.step_num = step_num
 
-        st.write("---")
-        if st.button("強制的に完成"):
-            tutor.receive_cv_result(True)
-            st.rerun()
+        # st.write("---")
+        # if st.button("強制的に完成"):
+        #     tutor.receive_cv_result(True)
+        #     st.rerun()
 
     # ---------------------------------------------------------
     # 右カラム: 手動コントロール
